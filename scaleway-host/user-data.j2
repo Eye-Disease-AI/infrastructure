@@ -1,0 +1,22 @@
+#cloud-config
+wireguard:
+  interfaces:
+    - name: wg0
+      config_path: /etc/wireguard/wg0.conf
+      content: |
+        [Interface]
+        PrivateKey = {{ private_key }}
+        Address = {{ address }}
+        PostUp = ping -c 3 10.13.13.1
+        [Peer]
+        PublicKey = {{ public_key }}
+        Endpoint = {{ endpoint_ip }}:{{ endpoint_ip_port }}
+        AllowedIPs = {{ allowedips }}
+        PresharedKey = {{ preshared_key }}
+        PersistentKeepalive = 25
+users:
+  - name: cogshelium00
+    groups: sudo
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - {{ ssh_public_key }}

@@ -1,0 +1,58 @@
+terraform {
+  required_providers {
+    scaleway = {
+      source = "opentofu/scaleway"
+      version = "2.70.1"
+    }
+  }
+}
+
+variable "scw_access_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "scw_secret_key" {
+  type      = string
+  sensitive = true
+}
+
+variable "scw_project_id" {
+  type      = string
+}
+
+variable "scw_organization_id" {
+  type      = string
+}
+
+provider "scaleway" {
+  access_key      = var.scw_access_key
+  secret_key      = var.scw_secret_key
+  organization_id = var.scw_organization_id
+  project_id      = var.scw_project_id
+}
+
+#resource "scaleway_block_volume" "data" {
+#  size_in_gb = 10
+#  iops       = 5000
+#}
+
+{% for instance in instances %}
+resource "scaleway_instance_ip" "public_ip_{{ loop.index }}" {}
+
+resource "scaleway_instance_server" "trainer_{{ loop.index }}" {
+  type = "POP2-2C-8G"
+  image = "ubuntu_noble"
+  #type = "L4-1-24G"
+  ip_id = scaleway_instance_ip.public_ip_{{ loop.index }}.id
+
+  #  root_volume {
+  #    volume_type = "sbs_volume"
+  #    volume_id = scaleway_block_volume.data.id
+  #  }
+
+  user_data = {
+    cloud-init = file("${path.module}/cloudinits/{{ loop.index }}.yml")
+  }
+}
+{% endfor %}
