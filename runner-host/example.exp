@@ -1,0 +1,7 @@
+OnPremise yes
+WorkerType H100
+NumWorkers 2
+Upload /some/path
+Upload /other/path
+Artifact /workspace/weights.h5
+Artiface /workspace/plot.png
