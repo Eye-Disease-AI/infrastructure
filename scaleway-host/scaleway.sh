@@ -155,14 +155,16 @@ scw_generate_terraform() {
 }
 
 scw_start() {
-	local num_workers workers_nocidr_ips workers_wg_pubkeys nocidr
+	local num_workers workers_nocidr_ips workers_wg_pubkeys nocidr json
 
 	if (( $# > 1 )); then
-		log_err "Usage: [n]"
+		log_err "Usage: [n] [json]"
 		exit 1
 	fi
 
 	num_workers="${1:-1}"
+	json="${2:-no}"
+
 	workers_nocidr_ips=()
 	workers_wg_pubkeys=()
 
@@ -208,8 +210,25 @@ scw_start() {
 		log_ok "Instance [$(( i+1 ))] started"
 	done
 
-	echo "local scw_wg_public_keys=(${workers_wg_pubkeys[@]@Q})"
-	echo "local scw_nocidrs=(${workers_nocidr_ips[@]@Q})"
+	if [[ "$json" == "yes" ]]; then
+		printf "{\"workers\": ["
+
+		for i in "${!workers_wg_pubkeys[@]}"; do
+			printf "{"
+			printf "pubkey: \"${workers_wg_pubkeys[i]}\","
+			printf "ipaddr: \"${workers_nocidr_ips[i]}\""
+			printf "}"
+
+			if (( i != num_workers-1 )); then
+				printf ","
+			fi
+		done
+
+		printf "]}\n"
+	else
+		echo "local scw_wg_public_keys=(${workers_wg_pubkeys[@]@Q})"
+		echo "local scw_nocidrs=(${workers_nocidr_ips[@]@Q})"
+	fi
 }
 
 scw_stop() {
