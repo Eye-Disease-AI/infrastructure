@@ -182,7 +182,12 @@ func prepareUpload(
 }
 
 func startWorkers(exp *experiment.Experiment) error {
-	scwPath := path.Join(thisDir(), "..", "scaleway-host", "scaleway.sh")
+	scwPath := path.Join(
+		string(os.PathSeparator),
+		"root",
+		"scaleway-host",
+		"scaleway.sh",
+	)
 	scwPath, err := filepath.Abs(scwPath)
 	if err != nil {
 		log.Err("Failed to get scaleway helper path")
