@@ -4,6 +4,7 @@ LOG_SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" \
 	&> /dev/null && pwd )
 LOG_DISABLED=${LOG_DISABLED:-false}
 LOG_SOCKPATH=${LOG_SOCKPATH:-"none"}
+LOG_DEST=${LOG_DEST:-"stdout"}
 
 source $LOG_SCRIPT_DIR/color.sh
 
@@ -15,7 +16,12 @@ log_init() {
 	if [[ "$LOG_SOCKPATH" == "none" ]]; then
 		LOG_SOCKPATH="$(mktemp -d)/sock"
 		mkfifo "$LOG_SOCKPATH"
-		tail -f "$LOG_SOCKPATH" &
+
+		if [[ "$LOG_DEST" == "stdout" ]]; then
+			tail -f "$LOG_SOCKPATH" &
+		elif [[ "$LOG_DEST" == "stderr" ]]; then
+			tail -f "$LOG_SOCKPATH" 1>&2 &
+		fi
 	fi
 }
 
