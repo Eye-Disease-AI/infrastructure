@@ -1,15 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
-	"strconv"
+	"strings"
 	"syscall"
 
+	"github.com/bitfield/script"
 	"krzyzanowski.dev/miniblazing/internal/experiment"
 	"krzyzanowski.dev/miniblazing/internal/log"
 )
@@ -18,10 +20,26 @@ const exitErr = 1
 const exitLock = 199
 
 var flockPath string
+var scwPath string
 
 func init() {
+	var err error
+
 	d := thisDir()
 	flockPath = path.Join(d, "lock")
+
+	scwPath, err = filepath.Abs(path.Join(
+		thisDir(),
+		"..",
+		"scaleway-host",
+		"scaleway.sh",
+	))
+
+	scwPath, err = filepath.Abs(scwPath)
+	if err != nil {
+		log.Err("Failed to get scaleway helper path")
+		os.Exit(exitErr)
+	}
 }
 
 func main() {
@@ -182,29 +200,31 @@ func prepareUpload(
 }
 
 func startWorkers(exp *experiment.Experiment) error {
-	scwPath := path.Join(
-		string(os.PathSeparator),
-		"root",
-		"scaleway-host",
-		"scaleway.sh",
-	)
-	scwPath, err := filepath.Abs(scwPath)
-	if err != nil {
-		log.Err("Failed to get scaleway helper path")
-		os.Exit(exitErr)
-	}
+	currentEnv := os.Environ()
+	newEnv := append(currentEnv, "LOG_DEST=stderr")
+	scwOut := bytes.NewBuffer([]byte{})
 
-	scwCmd := exec.Command(
+	startCmd := fmt.Sprintf(
+		"%s start %d yes",
 		scwPath,
-		"start",
-		strconv.Itoa(exp.NumWorkers),
-		"yes",
+		//exp.NumWorkers,
+		1,
 	)
-	scwOut, err := scwCmd.Output()
+	log.Info("Start cmd: %s", startCmd)
+	_, err := script.
+		Exec(startCmd).
+		WithEnv(newEnv).
+		WithStdout(scwOut).
+		WithStderr(os.Stderr).
+		Stdout()
+
 	if err != nil {
 		log.Err("Failed to start workers: %s", err)
 		return err
 	}
+
+	log.Ok("Workers started")
+	log.Info("Workers JSON: %s", scwOut.String())
 
 	var startResult struct {
 		Workers []struct {
@@ -213,11 +233,30 @@ func startWorkers(exp *experiment.Experiment) error {
 		} `json:"workers"`
 	}
 
-	err = json.Unmarshal(scwOut, &startResult)
+	err = json.Unmarshal(scwOut.Bytes(), &startResult)
 	if err != nil {
 		log.Err("Failed to unmarshal worker info")
 		return err
 	}
+
+	log.Info("Loaded startResult: %+v", startResult)
+	log.Wait("Stopping workers")
+
+	pubkeys := []string{}
+	for _, worker := range startResult.Workers {
+		pubkeys = append(pubkeys, worker.Pubkey)
+	}
+	pubkeysArr := strings.Join(pubkeys, " ")
+
+	stopCmd := fmt.Sprintf(
+		"%s stop %s",
+		scwPath,
+		pubkeysArr,
+	)
+	log.Info("Stop cmd: %s", startCmd)
+	script.Exec(stopCmd).WithStdout(os.Stdout).WithStderr(os.Stderr).Stdout()
+
+	log.Ok("Workload complete")
 
 	return nil
 }
