@@ -22,6 +22,15 @@ const exitLock = 199
 var flockPath string
 var scwPath string
 
+type worker struct {
+	Pubkey string `json:"pubkey"`
+	IpAddr string `json:"ipaddr"`
+}
+
+type workforce struct {
+	Workers []worker `json:"workers"`
+}
+
 func init() {
 	var err error
 
@@ -67,25 +76,36 @@ func runOn(commitSha string, repoPath string) {
 
 	flock, err := acquireFlock()
 	if err != nil {
+		log.Err(err.Error())
 		os.Exit(exitLock)
 	}
 	defer flock.Close()
 
 	exp, err := loadExperiment(repoPath)
 	if err != nil {
+		log.Err(err.Error())
 		os.Exit(exitErr)
 	}
 
 	_, err = prepareUpload(exp, repoPath)
 	if err != nil {
+		log.Err(err.Error())
 		os.Exit(exitErr)
 	}
 
-	err = startWorkers(exp)
+	wf, err := startWorkers(exp)
 	if err != nil {
-		fmt.Println(err)
+		log.Err(err.Error())
 		os.Exit(exitErr)
 	}
+
+	err = stopWorkers(wf)
+	if err != nil {
+		log.Err(err.Error())
+		os.Exit(exitErr)
+	}
+
+	log.Ok("Workload complete")
 }
 
 func acquireFlock() (*os.File, error) {
@@ -199,7 +219,7 @@ func prepareUpload(
 	return archivePath, nil
 }
 
-func startWorkers(exp *experiment.Experiment) error {
+func startWorkers(exp *experiment.Experiment) (*workforce, error) {
 	currentEnv := os.Environ()
 	newEnv := append(currentEnv, "LOG_DEST=stderr")
 	scwOut := bytes.NewBuffer([]byte{})
@@ -217,33 +237,30 @@ func startWorkers(exp *experiment.Experiment) error {
 		WithStdout(scwOut).
 		WithStderr(os.Stderr).
 		Stdout()
-
 	if err != nil {
 		log.Err("Failed to start workers: %s", err)
-		return err
+		return nil, err
 	}
 
 	log.Ok("Workers started")
 	log.Info("Workers JSON: %s", scwOut.String())
 
-	var startResult struct {
-		Workers []struct {
-			Pubkey string `json:"pubkey"`
-			IpAddr string `json:"ipaddr"`
-		} `json:"workers"`
-	}
-
-	err = json.Unmarshal(scwOut.Bytes(), &startResult)
+	var wf workforce
+	err = json.Unmarshal(scwOut.Bytes(), &wf)
 	if err != nil {
 		log.Err("Failed to unmarshal worker info")
-		return err
+		return nil, err
 	}
 
-	log.Info("Loaded startResult: %+v", startResult)
+	log.Info("Workforce started: %+v", wf)
+	return &wf, nil
+}
+
+func stopWorkers(wf *workforce) error {
 	log.Wait("Stopping workers")
 
 	pubkeys := []string{}
-	for _, worker := range startResult.Workers {
+	for _, worker := range wf.Workers {
 		pubkeys = append(pubkeys, worker.Pubkey)
 	}
 	pubkeysArr := strings.Join(pubkeys, " ")
@@ -253,11 +270,17 @@ func startWorkers(exp *experiment.Experiment) error {
 		scwPath,
 		pubkeysArr,
 	)
-	log.Info("Stop cmd: %s", startCmd)
-	script.Exec(stopCmd).WithStdout(os.Stdout).WithStderr(os.Stderr).Stdout()
+	log.Info("Stop cmd: %s", stopCmd)
+	_, err := script.
+		Exec(stopCmd).
+		WithStdout(os.Stdout).
+		WithStderr(os.Stderr).
+		Stdout()
+	if err != nil {
+		return err
+	}
 
-	log.Ok("Workload complete")
-
+	log.Ok("Workforce stopped")
 	return nil
 }
 
