@@ -238,7 +238,8 @@ scw_stop() {
 	local hot_peer_pubkeys=("$@")
 
 	log_wait "Stopping instances"
-	(cd "$SCW_SCRIPT_DIR" && tofu destroy -auto-approve)
+	(cd "$SCW_SCRIPT_DIR" && tofu destroy \
+		-var-file="$SCW_SECRETS_TFVARS" -auto-approve)
 
 	log_wait "Removing the hot peers"
 
