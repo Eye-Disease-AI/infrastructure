@@ -13,9 +13,9 @@ var ErrBadConfig error = errors.New("bad config")
 var ErrMissingValue error = errors.New("missing value")
 
 type Experiment struct {
-	OnPremise  bool     `exp:"required"`
-	WorkerType string   `exp:"required"`
-	NumWorkers int      `exp:"required"`
+	OnPremise  bool   `exp:"required"`
+	WorkerType string `exp:"required"`
+	NumWorkers int    `exp:"required"`
 	Uploads    []string
 	Artifacts  []string
 }
