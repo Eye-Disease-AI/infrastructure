@@ -11,6 +11,7 @@ SCW_WG_THIS_INTERNAL="10.13.13.1/32"
 SCW_REMOTE_USERNAME="cogshelium00"
 SCW_CLOUDINITS_PATH="$SCW_SCRIPT_DIR/cloudinits"
 SCW_TERRAFORM_PATH="$SCW_SCRIPT_DIR/main.tf"
+SCW_SECRETS_TFVARS="$SCW_SCRIPT_DIR/secrets.tfvars"
 
 if [[ "$0" != "${BASH_SOURCE[0]}" ]]; then
 	SCW_IS_SOURCED=true
@@ -157,7 +158,7 @@ scw_generate_terraform() {
 scw_start() {
 	local num_workers workers_nocidr_ips workers_wg_pubkeys nocidr json
 
-	if (( $# > 1 )); then
+	if (( $# > 2 )); then
 		log_err "Usage: [n] [json]"
 		exit 1
 	fi
@@ -200,10 +201,12 @@ scw_start() {
 	done
 
 	log_wait "Tofu plan"
-	(cd "$SCW_SCRIPT_DIR" && tofu plan &>/dev/null)
+	(cd "$SCW_SCRIPT_DIR" \
+		&& tofu plan -var-file="$SCW_SECRETS_TFVARS" &>/dev/null)
 
 	log_wait "Starting worker instances"
-	(cd "$SCW_SCRIPT_DIR" && tofu apply -auto-approve &>/dev/null)
+	(cd "$SCW_SCRIPT_DIR" && tofu apply \
+		-var-file="$SCW_SECRETS_TFVARS" -auto-approve &>/dev/null)
 
 	for i in "${!workers_nocidr_ips[@]}"; do
 		__scw_wait_for_start "${workers_nocidr_ips[i]}"
@@ -215,8 +218,8 @@ scw_start() {
 
 		for i in "${!workers_wg_pubkeys[@]}"; do
 			printf "{"
-			printf "pubkey: \"${workers_wg_pubkeys[i]}\","
-			printf "ipaddr: \"${workers_nocidr_ips[i]}\""
+			printf "\"pubkey\": \"${workers_wg_pubkeys[i]}\","
+			printf "\"ipaddr\": \"${workers_nocidr_ips[i]}\""
 			printf "}"
 
 			if (( i != num_workers-1 )); then
