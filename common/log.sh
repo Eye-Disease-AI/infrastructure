@@ -7,6 +7,7 @@ LOG_SOCKPATH=${LOG_SOCKPATH:-"none"}
 LOG_DEST=${LOG_DEST:-"stdout"}
 
 source $LOG_SCRIPT_DIR/color.sh
+source $LOG_SCRIPT_DIR/exit_callbacks.sh
 
 __log_date() {
 	date +"%F %T"
@@ -19,9 +20,13 @@ log_init() {
 
 		if [[ "$LOG_DEST" == "stdout" ]]; then
 			tail -f "$LOG_SOCKPATH" &
+			LOG_TAIL_PID="$!"
 		elif [[ "$LOG_DEST" == "stderr" ]]; then
 			tail -f "$LOG_SOCKPATH" 1>&2 &
+			LOG_TAIL_PID="$!"
 		fi
+
+		cm_add_exit_callback kill "$LOG_TAIL_PID"
 	fi
 }
 
