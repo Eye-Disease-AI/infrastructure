@@ -22,13 +22,96 @@ const exitLock = 199
 var flockPath string
 var scwPath string
 
-type worker struct {
+type workforce interface {
+	start() error
+	stop() error
+}
+
+type scalewayWorker struct {
 	Pubkey string `json:"pubkey"`
 	IpAddr string `json:"ipaddr"`
 }
 
-type workforce struct {
-	Workers []worker `json:"workers"`
+type scalewayStartResult struct {
+	Workers []scalewayWorker `json:"workers"`
+}
+
+type scalewayWorkforce struct {
+	count   int
+	workers []scalewayWorker
+}
+
+func newScalewayWorkforce(count int) *scalewayWorkforce {
+	return &scalewayWorkforce{
+		count:   count,
+		workers: make([]scalewayWorker, 0),
+	}
+}
+
+func (sw *scalewayWorkforce) start() error {
+	currentEnv := os.Environ()
+	newEnv := append(currentEnv, "LOG_DEST=stderr")
+	scwOut := bytes.NewBuffer([]byte{})
+
+	startCmd := fmt.Sprintf(
+		"%s start %d yes",
+		scwPath,
+		sw.count,
+	)
+	log.Info("Start cmd: %s", startCmd)
+	_, err := script.
+		Exec(startCmd).
+		WithEnv(newEnv).
+		WithStdout(scwOut).
+		WithStderr(os.Stderr).
+		Stdout()
+	if err != nil {
+		log.Err("Failed to start workers: %s", err)
+		return err
+	}
+
+	log.Ok("Workers started")
+	log.Info("Workers JSON: %s", scwOut.String())
+
+	var ssr scalewayStartResult
+	err = json.Unmarshal(scwOut.Bytes(), &ssr)
+	if err != nil {
+		log.Err("Failed to unmarshal worker info")
+		return err
+	}
+
+	sw.workers = ssr.Workers
+	log.Info("Workforce started: %+v", ssr)
+
+	return nil
+}
+
+func (sw *scalewayWorkforce) stop() error {
+	log.Wait("Stopping workers")
+
+	pubkeys := []string{}
+	for _, worker := range sw.workers {
+		pubkeys = append(pubkeys, worker.Pubkey)
+	}
+	pubkeysArr := strings.Join(pubkeys, " ")
+
+	stopCmd := fmt.Sprintf(
+		"%s stop %s",
+		scwPath,
+		pubkeysArr,
+	)
+	log.Info("Stop cmd: %s", stopCmd)
+	_, err := script.
+		Exec(stopCmd).
+		WithStdout(os.Stdout).
+		WithStderr(os.Stderr).
+		Stdout()
+	if err != nil {
+		return err
+	}
+
+	log.Ok("Workforce stopped")
+	return nil
 }
 
 func init() {
@@ -66,12 +149,18 @@ func main() {
 
 		commitSha := os.Args[2]
 		repoPath := os.Args[3]
+		exp, err := loadExperiment(repoPath)
+		if err != nil {
+			log.Err(err.Error())
+			os.Exit(exitErr)
+		}
 
-		runOn(commitSha, repoPath)
+		wf := newScalewayWorkforce(exp.NumWorkers)
+		runOn(wf, commitSha, repoPath)
 	}
 }
 
-func runOn(commitSha string, repoPath string) {
+func runOn(wf workforce, commitSha string, repoPath string) {
 	log.Ok("Running workload @ %s#%s", commitSha, repoPath)
 
 	flock, err := acquireFlock()
@@ -93,13 +182,13 @@ func runOn(commitSha string, repoPath string) {
 		os.Exit(exitErr)
 	}
 
-	wf, err := startWorkers(exp)
+	err = wf.start()
 	if err != nil {
 		log.Err(err.Error())
 		os.Exit(exitErr)
 	}
 
-	err = stopWorkers(wf)
+	err = wf.stop()
 	if err != nil {
 		log.Err(err.Error())
 		os.Exit(exitErr)
@@ -217,71 +306,6 @@ func prepareUpload(
 	log.Ok("Archive created @ %s", archivePath)
 
 	return archivePath, nil
-}
-
-func startWorkers(exp *experiment.Experiment) (*workforce, error) {
-	currentEnv := os.Environ()
-	newEnv := append(currentEnv, "LOG_DEST=stderr")
-	scwOut := bytes.NewBuffer([]byte{})
-
-	startCmd := fmt.Sprintf(
-		"%s start %d yes",
-		scwPath,
-		//exp.NumWorkers,
-		1,
-	)
-	log.Info("Start cmd: %s", startCmd)
-	_, err := script.
-		Exec(startCmd).
-		WithEnv(newEnv).
-		WithStdout(scwOut).
-		WithStderr(os.Stderr).
-		Stdout()
-	if err != nil {
-		log.Err("Failed to start workers: %s", err)
-		return nil, err
-	}
-
-	log.Ok("Workers started")
-	log.Info("Workers JSON: %s", scwOut.String())
-
-	var wf workforce
-	err = json.Unmarshal(scwOut.Bytes(), &wf)
-	if err != nil {
-		log.Err("Failed to unmarshal worker info")
-		return nil, err
-	}
-
-	log.Info("Workforce started: %+v", wf)
-	return &wf, nil
-}
-
-func stopWorkers(wf *workforce) error {
-	log.Wait("Stopping workers")
-
-	pubkeys := []string{}
-	for _, worker := range wf.Workers {
-		pubkeys = append(pubkeys, worker.Pubkey)
-	}
-	pubkeysArr := strings.Join(pubkeys, " ")
-
-	stopCmd := fmt.Sprintf(
-		"%s stop %s",
-		scwPath,
-		pubkeysArr,
-	)
-	log.Info("Stop cmd: %s", stopCmd)
-	_, err := script.
-		Exec(stopCmd).
-		WithStdout(os.Stdout).
-		WithStderr(os.Stderr).
-		Stdout()
-	if err != nil {
-		return err
-	}
-
-	log.Ok("Workforce stopped")
-	return nil
 }
 
 func thisDir() string {
