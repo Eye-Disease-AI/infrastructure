@@ -1,0 +1,5 @@
+OnPremise yes
+WorkerType H100
+NumWorkers 2
+Upload test1
+Artifact test2
