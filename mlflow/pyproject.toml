@@ -1,0 +1,16 @@
+[project]
+name = "docker-compose"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "mlflow[auth]>=3.10.1",
+    "numpy>=2.2.6",
+    "optuna>=4.8.0",
+    "pip>=26.0.1",
+    "psycopg2-binary>=2.9.11",
+    "python-dotenv>=1.2.2",
+    "torch>=2.11.0",
+]
