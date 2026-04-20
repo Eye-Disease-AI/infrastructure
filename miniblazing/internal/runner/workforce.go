@@ -3,7 +3,10 @@ package runner
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -15,6 +18,8 @@ import (
 
 type workforce interface {
 	Start() error
+	OpenFile(string, int, fs.FileMode) (io.ReadWriteCloser, error)
+	Run(string, <-chan string) error
 	Stop() error
 }
 
@@ -99,6 +104,28 @@ func (sw *scalewayWorkforce) Start() error {
 
 	return nil
 }
+
+type remoteFile struct {
+	r       io.Reader
+	w       io.Writer
+	closeFn func() error
+}
+
+func (f *remoteFile) Read(p []byte) (int, error) {
+	if f.r == nil {
+		return 0, errors.New("not readable")
+	}
+	return f.r.Read(p)
+}
+
+func (f *remoteFile) Write(p []byte) (int, error) {
+	if f.w == nil {
+		return 0, errors.New("not writable")
+	}
+	return f.w.Write(p)
+}
+
+func (f *remoteFile) Close() error { return f.closeFn() }
 
 func (sw *scalewayWorkforce) Stop() error {
 	log.Wait("Stopping workers")

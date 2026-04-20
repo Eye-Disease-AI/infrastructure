@@ -4,8 +4,10 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,7 +16,6 @@ import (
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/plumbing/object"
 	"github.com/go-git/go-git/v6/storage/memory"
-	"krzyzanowski.dev/miniblazing/internal/log"
 )
 
 //go:embed testdata/example.exp
@@ -27,7 +28,7 @@ func TestBasic(t *testing.T) {
 		return
 	}
 
-	wf := testWorkforce{}
+	wf := newTestWorkforce()
 	err = RunOn(wf, tr)
 	if err != nil {
 		t.Error(err)
@@ -156,7 +157,7 @@ func (tr *testRepository) copyRecursive(
 				return err
 			}
 
-			_, err = io.Copy(srcFile, destFile)
+			_, err = io.Copy(destFile, srcFile)
 			if err != nil {
 				return err
 			}
@@ -168,14 +169,69 @@ func (tr *testRepository) copyRecursive(
 	return nil
 }
 
-type testWorkforce struct{}
+type testWorkforce struct {
+	fs billy.Filesystem
+}
+
+func newTestWorkforce() testWorkforce {
+	return testWorkforce{
+		fs: memfs.New(),
+	}
+}
 
 func (testWorkforce) Start() error {
-	log.Info("Starting test workforce")
 	return nil
 }
 
+func (tw testWorkforce) OpenFile(
+	filename string,
+	flag int,
+	perm fs.FileMode,
+) (io.ReadWriteCloser, error) {
+	return tw.fs.OpenFile(filename, flag, perm)
+}
+
+type testCommandFn func(fs billy.Filesystem, args []string, stdin <-chan string) error
+
+var testCommands = map[string]testCommandFn{
+	"cp": func(bfs billy.Filesystem, args []string, stdin <-chan string) error {
+		if len(args) != 2 {
+			return fmt.Errorf("cp: expected 2 arguments, got %d", len(args))
+		}
+		src, err := bfs.Open(args[0])
+		if err != nil {
+			return err
+		}
+		defer src.Close()
+
+		srcInfo, err := src.Stat()
+		if err != nil {
+			return err
+		}
+
+		dst, err := bfs.OpenFile(args[1], os.O_CREATE|os.O_WRONLY|os.O_TRUNC, srcInfo.Mode())
+		if err != nil {
+			return err
+		}
+		defer dst.Close()
+
+		_, err = io.Copy(dst, src)
+		return err
+	},
+}
+
+func (tw testWorkforce) Run(cmd string, stdin <-chan string) error {
+	parts := strings.Fields(cmd)
+	if len(parts) == 0 {
+		return nil
+	}
+	handler, ok := testCommands[parts[0]]
+	if !ok {
+		return fmt.Errorf("unknown command: %s", parts[0])
+	}
+	return handler(tw.fs, parts[1:], stdin)
+}
+
 func (testWorkforce) Stop() error {
-	log.Info("Stopping test workforce")
 	return nil
 }
