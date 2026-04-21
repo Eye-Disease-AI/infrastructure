@@ -112,28 +112,6 @@ func (sw *scalewayWorkforce) Start() error {
 	return nil
 }
 
-type remoteFile struct {
-	r       io.Reader
-	w       io.Writer
-	closeFn func() error
-}
-
-func (f *remoteFile) Read(p []byte) (int, error) {
-	if f.r == nil {
-		return 0, errors.New("not readable")
-	}
-	return f.r.Read(p)
-}
-
-func (f *remoteFile) Write(p []byte) (int, error) {
-	if f.w == nil {
-		return 0, errors.New("not writable")
-	}
-	return f.w.Write(p)
-}
-
-func (f *remoteFile) Close() error { return f.closeFn() }
-
 func (sw *scalewayWorkforce) sshClient(i int) (*ssh.Client, error) {
 	if sw.sshClients[i] != nil {
 		return sw.sshClients[i], nil
@@ -198,7 +176,7 @@ func (sw *scalewayWorkforce) Run(cmd string, _ <-chan string) error {
 				errs[i] = err
 				return
 			}
-			defer sess.Close()
+			defer func() { _ = sess.Close() }()
 			sess.Stdout = os.Stdout
 			sess.Stderr = os.Stderr
 			errs[i] = sess.Run(cmd)
@@ -222,14 +200,14 @@ func (sw *scalewayWorkforce) OpenFile(
 		c, err := sw.sftpClient(i)
 		if err != nil {
 			for _, f := range files[:i] {
-				f.Close()
+				_ = f.Close()
 			}
 			return nil, err
 		}
 		f, err := c.OpenFile(filename, flag)
 		if err != nil {
 			for _, f := range files[:i] {
-				f.Close()
+				_ = f.Close()
 			}
 			return nil, err
 		}
@@ -243,12 +221,12 @@ func (sw *scalewayWorkforce) Stop() error {
 
 	for _, c := range sw.sftpClients {
 		if c != nil {
-			c.Close()
+			_ = c.Close()
 		}
 	}
 	for _, c := range sw.sshClients {
 		if c != nil {
-			c.Close()
+			_ = c.Close()
 		}
 	}
 

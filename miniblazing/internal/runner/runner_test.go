@@ -206,7 +206,7 @@ var testCommands = map[string]testCommandFn{
 		if err != nil {
 			return err
 		}
-		defer src.Close()
+		defer func() { _ = src.Close() }()
 
 		srcInfo, err := src.Stat()
 		if err != nil {
@@ -217,7 +217,7 @@ var testCommands = map[string]testCommandFn{
 		if err != nil {
 			return err
 		}
-		defer dst.Close()
+		defer func() { _ = dst.Close() }()
 
 		_, err = io.Copy(dst, src)
 		return err

@@ -72,8 +72,8 @@ func RunOn(wf workforce, repo repository) error {
 				uploadErrs[i] = err
 				return
 			}
-			defer src.Close()
-			defer arDest.Close()
+			defer func() { _ = src.Close() }()
+			defer func() { _ = arDest.Close() }()
 			_, uploadErrs[i] = io.Copy(arDest, src)
 		})
 	}
@@ -112,8 +112,8 @@ func RunOn(wf workforce, repo repository) error {
 				downloadErrs[i] = err
 				return
 			}
-			defer artifactsDest.Close()
-			defer artifactsSrc.Close()
+			defer func() { _ = artifactsDest.Close() }()
+			defer func() { _ = artifactsSrc.Close() }()
 			_, downloadErrs[i] = io.Copy(artifactsDest, artifactsSrc)
 		})
 	}
