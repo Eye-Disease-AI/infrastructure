@@ -12,6 +12,9 @@ Self-hosted MLflow with PostgreSQL backend, local artifact storage, and basic au
 - `pyproject.toml` - Python dependencies for running training scripts.
 - `mlflow-auth.py` - CLI for managing MLflow users and workspace permissions.
     Subcommands: list, create, passwd, grant, revoke.
+    - The script is copied to /mlflow-auth.py in the mlflow-server container.
+      It has to be used from inside the container.
+      E.g. `docker exec -it mlflow-server bash -c "python mlflow-auth.py list"`
 - `train.py` - Example of usage. Optuna hyperparameter search logged to MLflow.
     Multiple workers can run it at the same time, the DB will sync them so that
     they work on the same objective in parallel. Each trial logs loss curves
