@@ -23,7 +23,10 @@ services:
       retries: 10
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:${MLFLOW_VERSION}
+    build:
+      context: .
+      args:
+        MLFLOW_VERSION: "${MLFLOW_VERSION}"
     container_name: mlflow-server
     depends_on:
       postgres:
@@ -40,7 +43,6 @@ services:
       - /bin/bash
       - -c
       - |
-        pip install --no-cache-dir psycopg2-binary 'mlflow[auth]'
         printf '[mlflow]\ndefault_permission = READ\ndatabase_uri = sqlite:////mlauth/users.db\nadmin_username = %s\nadmin_password = %s\n' \
           "${MLFLOW_ADMIN_USERNAME}" "${MLFLOW_ADMIN_PASSWORD}" > /mlauth/basic_auth.ini
         mlflow server \
