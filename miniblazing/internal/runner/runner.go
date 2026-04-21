@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	"krzyzanowski.dev/miniblazing/internal/experiment"
@@ -62,16 +63,24 @@ func RunOn(wf workforce, repo repository) error {
 		log.Err("%s", err)
 		return ErrOther
 	}
-	arSrc, err := os.Open(archivePath)
-	if err != nil {
+	uploadErrs := make([]error, len(arDests))
+	var uploadWg sync.WaitGroup
+	for i, arDest := range arDests {
+		uploadWg.Go(func() {
+			src, err := os.Open(archivePath)
+			if err != nil {
+				uploadErrs[i] = err
+				return
+			}
+			defer src.Close()
+			defer arDest.Close()
+			_, uploadErrs[i] = io.Copy(arDest, src)
+		})
+	}
+	uploadWg.Wait()
+	if err := errors.Join(uploadErrs...); err != nil {
 		log.Err("%s", err)
 		return ErrOther
-	}
-	for _, arDest := range arDests {
-		if _, err = io.Copy(arDest, arSrc); err != nil {
-			log.Err("%s", err)
-			return ErrOther
-		}
 	}
 	log.Ok("Archive uploaded")
 
@@ -94,21 +103,24 @@ func RunOn(wf workforce, repo repository) error {
 		log.Err("%s", err)
 		return ErrOther
 	}
+	downloadErrs := make([]error, len(artifactsSrcs))
+	var downloadWg sync.WaitGroup
 	for i, artifactsSrc := range artifactsSrcs {
-		err := func() error {
+		downloadWg.Go(func() {
 			artifactsDest, err := os.Create(fmt.Sprintf("%s/%d.tar.gz", artifactsDir, i))
 			if err != nil {
-				return err
+				downloadErrs[i] = err
+				return
 			}
 			defer artifactsDest.Close()
 			defer artifactsSrc.Close()
-			_, err = io.Copy(artifactsDest, artifactsSrc)
-			return err
-		}()
-		if err != nil {
-			log.Err("%s", err)
-			return ErrOther
-		}
+			_, downloadErrs[i] = io.Copy(artifactsDest, artifactsSrc)
+		})
+	}
+	downloadWg.Wait()
+	if err := errors.Join(downloadErrs...); err != nil {
+		log.Err("%s", err)
+		return ErrOther
 	}
 	log.Ok("Artifacts downloaded @ %s", artifactsDir)
 
