@@ -187,8 +187,12 @@ func (tw testWorkforce) OpenFile(
 	filename string,
 	flag int,
 	perm fs.FileMode,
-) (io.ReadWriteCloser, error) {
-	return tw.fs.OpenFile(filename, flag, perm)
+) ([]io.ReadWriteCloser, error) {
+	f, err := tw.fs.OpenFile(filename, flag, perm)
+	if err != nil {
+		return nil, err
+	}
+	return []io.ReadWriteCloser{f}, nil
 }
 
 type testCommandFn func(fs billy.Filesystem, args []string, stdin <-chan string) error

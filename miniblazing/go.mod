@@ -21,9 +21,11 @@ require (
 	github.com/itchyny/timefmt-go v0.1.5 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pjbgf/sha1cd v0.5.0 // indirect
+	github.com/pkg/sftp v1.13.10 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/net v0.51.0 // indirect

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -56,7 +57,7 @@ func RunOn(wf workforce, repo repository) error {
 	log.Ok("Workforce started")
 
 	log.Wait("Uploading archive")
-	arDest, err := wf.OpenFile("/a.tar.gz", os.O_CREATE|os.O_RDWR, 0666)
+	arDests, err := wf.OpenFile("/a.tar.gz", os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
 		log.Err("%s", err)
 		return ErrOther
@@ -66,10 +67,11 @@ func RunOn(wf workforce, repo repository) error {
 		log.Err("%s", err)
 		return ErrOther
 	}
-	_, err = io.Copy(arDest, arSrc)
-	if err != nil {
-		log.Err("%s", err)
-		return ErrOther
+	for _, arDest := range arDests {
+		if _, err = io.Copy(arDest, arSrc); err != nil {
+			log.Err("%s", err)
+			return ErrOther
+		}
 	}
 	log.Ok("Archive uploaded")
 
@@ -82,22 +84,33 @@ func RunOn(wf workforce, repo repository) error {
 	log.Ok("Command finished")
 
 	log.Wait("Downloading artifacts")
-	artifactsSrc, err := wf.OpenFile("/b.tar.gz", os.O_RDONLY, 0)
+	artifactsSrcs, err := wf.OpenFile("/b.tar.gz", os.O_RDONLY, 0)
 	if err != nil {
 		log.Err("%s", err)
 		return ErrOther
 	}
-	artifactsDest, err := os.CreateTemp("", "miniblazing-artifacts-*.tar.gz")
+	artifactsDir, err := os.MkdirTemp("", "miniblazing-artifacts-*")
 	if err != nil {
 		log.Err("%s", err)
 		return ErrOther
 	}
-	_, err = io.Copy(artifactsDest, artifactsSrc)
-	if err != nil {
-		log.Err("%s", err)
-		return ErrOther
+	for i, artifactsSrc := range artifactsSrcs {
+		err := func() error {
+			artifactsDest, err := os.Create(fmt.Sprintf("%s/%d.tar.gz", artifactsDir, i))
+			if err != nil {
+				return err
+			}
+			defer artifactsDest.Close()
+			defer artifactsSrc.Close()
+			_, err = io.Copy(artifactsDest, artifactsSrc)
+			return err
+		}()
+		if err != nil {
+			log.Err("%s", err)
+			return ErrOther
+		}
 	}
-	log.Ok("Artifacts downloaded @ %s", artifactsDest.Name())
+	log.Ok("Artifacts downloaded @ %s", artifactsDir)
 
 	log.Wait("Stopping workforce")
 	err = wf.Stop()

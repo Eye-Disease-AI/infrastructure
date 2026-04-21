@@ -11,14 +11,17 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/bitfield/script"
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 	"krzyzanowski.dev/miniblazing/internal/log"
 )
 
 type workforce interface {
 	Start() error
-	OpenFile(string, int, fs.FileMode) (io.ReadWriteCloser, error)
+	OpenFile(string, int, fs.FileMode) ([]io.ReadWriteCloser, error)
 	Run(string, <-chan string) error
 	Stop() error
 }
@@ -33,8 +36,10 @@ type scalewayStartResult struct {
 }
 
 type scalewayWorkforce struct {
-	count   int
-	workers []scalewayWorker
+	count       int
+	workers     []scalewayWorker
+	sshClients  []*ssh.Client
+	sftpClients []*sftp.Client
 }
 
 var scwPath string
@@ -100,6 +105,8 @@ func (sw *scalewayWorkforce) Start() error {
 	}
 
 	sw.workers = ssr.Workers
+	sw.sshClients = make([]*ssh.Client, len(sw.workers))
+	sw.sftpClients = make([]*sftp.Client, len(sw.workers))
 	log.Info("Workforce started: %+v", ssr)
 
 	return nil
@@ -127,8 +134,123 @@ func (f *remoteFile) Write(p []byte) (int, error) {
 
 func (f *remoteFile) Close() error { return f.closeFn() }
 
+func (sw *scalewayWorkforce) sshClient(i int) (*ssh.Client, error) {
+	if sw.sshClients[i] != nil {
+		return sw.sshClients[i], nil
+	}
+
+	ip := sw.workers[i].IpAddr
+
+	key, err := os.ReadFile(os.ExpandEnv("$HOME/.ssh/id_rsa"))
+	if err != nil {
+		return nil, err
+	}
+
+	signer, err := ssh.ParsePrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+
+	c, err := ssh.Dial("tcp", ip+":22", &ssh.ClientConfig{
+		User:            "root",
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	sw.sshClients[i] = c
+	return c, nil
+}
+
+func (sw *scalewayWorkforce) sftpClient(i int) (*sftp.Client, error) {
+	if sw.sftpClients[i] != nil {
+		return sw.sftpClients[i], nil
+	}
+
+	sc, err := sw.sshClient(i)
+	if err != nil {
+		return nil, err
+	}
+
+	c, err := sftp.NewClient(sc)
+	if err != nil {
+		return nil, err
+	}
+
+	sw.sftpClients[i] = c
+	return c, nil
+}
+
+func (sw *scalewayWorkforce) Run(cmd string, _ <-chan string) error {
+	errs := make([]error, len(sw.workers))
+	var wg sync.WaitGroup
+	for i := range sw.workers {
+		wg.Go(func() {
+			sc, err := sw.sshClient(i)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			sess, err := sc.NewSession()
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer sess.Close()
+			sess.Stdout = os.Stdout
+			sess.Stderr = os.Stderr
+			errs[i] = sess.Run(cmd)
+		})
+	}
+	wg.Wait()
+	return errors.Join(errs...)
+}
+
+func (sw *scalewayWorkforce) OpenFile(
+	filename string,
+	flag int,
+	perm fs.FileMode,
+) ([]io.ReadWriteCloser, error) {
+	if len(sw.workers) == 0 {
+		return nil, errors.New("no workers available")
+	}
+
+	files := make([]io.ReadWriteCloser, len(sw.workers))
+	for i := range sw.workers {
+		c, err := sw.sftpClient(i)
+		if err != nil {
+			for _, f := range files[:i] {
+				f.Close()
+			}
+			return nil, err
+		}
+		f, err := c.OpenFile(filename, flag)
+		if err != nil {
+			for _, f := range files[:i] {
+				f.Close()
+			}
+			return nil, err
+		}
+		files[i] = f
+	}
+	return files, nil
+}
+
 func (sw *scalewayWorkforce) Stop() error {
 	log.Wait("Stopping workers")
+
+	for _, c := range sw.sftpClients {
+		if c != nil {
+			c.Close()
+		}
+	}
+	for _, c := range sw.sshClients {
+		if c != nil {
+			c.Close()
+		}
+	}
 
 	pubkeys := []string{}
 	for _, worker := range sw.workers {
