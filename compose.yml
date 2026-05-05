@@ -1,0 +1,16 @@
+include:
+  - ./mlflow/docker-compose.yml
+  - ./labelstudio/compose.yml
+services:
+  proxy:
+    build: proxy
+    volumes:
+      - type: bind
+        source: ./acme-host/certs
+        target: /root/acme-host/certs
+        read_only: true
+    ports:
+      - "10.13.13.1:443:443"
+    depends_on:
+      - labelstudio
+      - mlflow
