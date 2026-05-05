@@ -34,7 +34,7 @@ issue() {
 	acme.sh \
 		--issue \
 		--dns dns_ovh \
-		-d labelstudio.krzyzanowski.dev || rc=$?
+		-d "$domain_name" || rc=$?
 
 	if [ $rc -ne 0 ]; then
 		log_err "Issue failed for $domain"
@@ -67,6 +67,7 @@ install() {
 doall() {
 	domains=(
 		"labelstudio.krzyzanowski.dev"
+		"mlflow.krzyzanowski.dev"
 	)
 
 	for domain in "${domains[@]}"; do
