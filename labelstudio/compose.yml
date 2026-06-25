@@ -4,6 +4,7 @@ services:
     volumes:
       - ./data:/label-studio/data
       - ./files:/label-studio/files
+      - /home/filip/gabinet/data:/label-studio/files/gabinet
     environment:
       - CSRF_TRUSTED_ORIGINS=https://labelstudio.krzyzanowski.dev
       - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
